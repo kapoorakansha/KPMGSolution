@@ -1,0 +1,109 @@
+terraform{
+  backend "azurerm" {
+    resource_group_name ="rg"
+    storage_account_name ="storage"
+    container_name="tfstate"
+    key = "VM2.tfstate"
+  }
+
+}
+provider "azurerm" {
+  features {}
+  version  = ">= 2.10.0"
+    skip_provider_registration = "true"
+}
+# variable "prefix" {
+#  default = "testvms31"
+#}
+
+data "azurerm_resource_group" "main" {
+  name     = "test-rg"
+
+}
+
+
+data "azurerm_virtual_network" "main" {
+  name                = "test-vnet"
+  resource_group_name = "core-rg"
+}
+
+data "azurerm_subnet" "main" {
+  name                 = "app"
+  resource_group_name = "core-rg"
+  virtual_network_name =  data.azurerm_virtual_network.main.name
+}
+
+
+resource "azurerm_network_interface" "main" {
+  name                = "test2-nic1"
+  location            = data.azurerm_resource_group.main.location
+  resource_group_name = data.azurerm_resource_group.main.name
+  enable_accelerated_networking = true
+
+  ip_configuration {
+    name                          = "test2-ip"
+    subnet_id                     = data.azurerm_subnet.main.id
+    private_ip_address_allocation = "Dynamic"
+  }
+}
+
+resource "azurerm_availability_set" "availabilityset1" {
+   name = "Test-avset"
+   location             = data.azurerm_resource_group.main.location
+   resource_group_name  = data.azurerm_resource_group.main.name
+  platform_fault_domain_count = 2
+  platform_update_domain_count = 5
+   managed = true
+}
+
+resource "azurerm_virtual_machine" "main" {
+  name                  = "TestVM2"
+  location              = "eastus2"
+  availability_set_id   = azurerm_availability_set.availabilityset1.id
+  resource_group_name   = data.azurerm_resource_group.main.name
+  network_interface_ids = [azurerm_network_interface.main.id]
+  vm_size               = "Standard_A2_v4"
+
+
+  storage_image_reference {
+    publisher = "SUSE"
+    offer     = "SLES-SAP"
+    sku       = "12-SP4"
+    version   = "latest"
+  }
+  storage_os_disk {
+    name              = "osdisk2"
+    caching           = "ReadWrite"
+    create_option     = "FromImage"
+    managed_disk_type = "Standard_LRS"
+  }
+  os_profile {
+    computer_name  = "TestVM2"
+    admin_username = "admin"
+    admin_password = "July@1234"
+  }
+
+   os_profile_linux_config { 
+     disable_password_authentication = false
+   #  provision_vm_agent = true
+}
+ 
+  
+}
+
+
+  resource "azurerm_managed_disk" "datadisk1" {
+  name                 = "VM-datadisk-02"
+  location             = data.azurerm_resource_group.main.location
+  resource_group_name  = data.azurerm_resource_group.main.name
+  storage_account_type = "Premium_LRS"
+  create_option        = "Empty"
+  disk_size_gb         = 32
+  }
+
+resource "azurerm_virtual_machine_data_disk_attachment" "datadisk1" {
+ managed_disk_id    = azurerm_managed_disk.datadisk1.id
+  virtual_machine_id = azurerm_virtual_machine.main.id
+  lun                = "0"
+  caching            = "None"
+}
